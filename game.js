@@ -240,6 +240,7 @@ function updateHud() {
 
 function startGame() {
   resetGame();
+  startOverlay.classList.remove('visible');
   startOverlay.classList.add('hidden');
   gameOverOverlay.classList.add('hidden');
   upgradeOverlay.classList.add('hidden');

@@ -129,7 +129,7 @@ canvas {
   backdrop-filter: blur(8px);
 }
 
-.overlay.hidden { display: none; }
+.overlay.hidden { display: none !important; }
 .overlay.visible { display: flex; }
 
 .card {
