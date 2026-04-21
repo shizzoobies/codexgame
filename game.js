@@ -78,6 +78,10 @@ function safeSaveAudioEnabled(value) {
   }
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function buildStars() {
   return Array.from({ length: 42 }, () => ({
     x: Math.random() * W,
@@ -135,6 +139,7 @@ const player = {
   bulletSpeed: 12,
   bulletDamage: 1,
   spreadShots: 1,
+  homing: 0,
   moveTween: 0.25,
   magnet: 0,
   shield: 0,
@@ -172,6 +177,14 @@ const upgrades = [
     desc: 'Add more lanes to each volley.',
     apply: () => {
       player.spreadShots = Math.min(3, player.spreadShots + 1);
+    },
+  },
+  {
+    id: 'homing',
+    title: 'Smart Rounds',
+    desc: 'Missed shots retarget into other lanes.',
+    apply: () => {
+      player.homing = Math.min(2, player.homing + 1);
     },
   },
   {
@@ -471,6 +484,7 @@ function resetGame() {
   player.bulletSpeed = 12;
   player.bulletDamage = 1;
   player.spreadShots = 1;
+  player.homing = 0;
   player.magnet = 0;
   player.shield = 0;
 
@@ -618,9 +632,57 @@ function fireBullets() {
       height: 20,
       speed: player.bulletSpeed,
       damage: player.bulletDamage,
+      homing: player.homing,
+      age: 0,
+      vx: 0,
+      seeking: false,
     });
   });
   playSfx('shoot');
+}
+
+function findBulletTarget(bullet) {
+  if (bullet.homing <= 0 || bullet.age < 8) return null;
+
+  const candidates = enemies.filter((enemy) => enemy.y < bullet.y - 18 && enemy.y > -140);
+  if (candidates.length === 0) return null;
+
+  const inLaneTarget = candidates.some((enemy) => Math.abs(enemy.x - bullet.x) < 18);
+  if (inLaneTarget) return null;
+
+  return candidates.reduce((best, enemy) => {
+    const dx = enemy.x - bullet.x;
+    const dy = bullet.y - enemy.y;
+    const score = Math.abs(dx) * 1.55 + dy * 0.22;
+
+    if (!best || score < best.score) {
+      return { enemy, score };
+    }
+
+    return best;
+  }, null)?.enemy ?? null;
+}
+
+function updateBulletHoming(bullet) {
+  if (bullet.homing <= 0) return;
+
+  const target = findBulletTarget(bullet);
+  if (!target) {
+    bullet.vx *= 0.9;
+    bullet.x += bullet.vx;
+    bullet.seeking = false;
+    return;
+  }
+
+  const dx = target.x - bullet.x;
+  const dy = target.y - bullet.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const steerPower = 0.34 + bullet.homing * 0.16;
+  const maxTurn = 2.7 + bullet.homing * 1.2;
+
+  bullet.vx = clamp(bullet.vx + (dx / distance) * steerPower, -maxTurn, maxTurn);
+  bullet.x += bullet.vx;
+  bullet.seeking = true;
 }
 
 function addParticles(x, y, color, count = 10) {
@@ -798,9 +860,11 @@ function update() {
   }
 
   bullets.forEach((bullet) => {
+    bullet.age += 1;
     bullet.y -= bullet.speed;
+    updateBulletHoming(bullet);
   });
-  bullets = bullets.filter((bullet) => bullet.y > -40);
+  bullets = bullets.filter((bullet) => bullet.y > -40 && bullet.x > -40 && bullet.x < W + 40);
 
   enemyBullets.forEach((bullet) => {
     bullet.x += bullet.vx;
@@ -1044,7 +1108,22 @@ function drawPlayer() {
 
 function drawBullets() {
   bullets.forEach((bullet) => {
-    ctx.fillStyle = '#9be7ff';
+    if (bullet.homing > 0) {
+      ctx.fillStyle = bullet.seeking ? 'rgba(123, 182, 255, 0.35)' : 'rgba(155, 231, 255, 0.2)';
+      ctx.beginPath();
+      ctx.ellipse(
+        bullet.x - bullet.vx * 1.6,
+        bullet.y + bullet.height * 0.25,
+        bullet.width * 0.9,
+        bullet.height * 0.8,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+
+    ctx.fillStyle = bullet.seeking ? '#dffcff' : '#9be7ff';
     ctx.fillRect(bullet.x - bullet.width / 2, bullet.y - bullet.height / 2, bullet.width, bullet.height);
   });
 
