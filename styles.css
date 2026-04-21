@@ -24,17 +24,29 @@ html, body {
     linear-gradient(180deg, var(--bg2), var(--bg1));
   color: var(--text);
   touch-action: manipulation;
+  overscroll-behavior: none;
 }
 
 body {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 12px;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app-shell {
   width: min(100%, 460px);
+  min-height: calc(100vh - 24px);
+  min-height: calc(100svh - 24px);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -76,7 +88,10 @@ body {
 }
 
 .game-wrap {
+  flex: 1;
   position: relative;
+  display: flex;
+  align-items: stretch;
   background: rgba(3, 10, 20, 0.45);
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -87,9 +102,11 @@ body {
 canvas {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: 78vh;
+  height: 100%;
+  aspect-ratio: 420 / 760;
+  max-height: min(78vh, 78svh);
   background: linear-gradient(180deg, #153458 0%, #081426 100%);
+  touch-action: none;
 }
 
 .game-banner {
@@ -186,6 +203,8 @@ h1, h2 { margin: 0 0 12px; }
   background: linear-gradient(180deg, #f2f8ff, #d9e7f9);
   color: #071423;
   box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+  min-height: 48px;
+  touch-action: manipulation;
 }
 
 .secondary-btn {
@@ -232,10 +251,31 @@ h1, h2 { margin: 0 0 12px; }
 }
 
 @media (max-width: 480px) {
-  body { padding: 8px; }
+  body {
+    padding:
+      max(8px, env(safe-area-inset-top))
+      max(8px, env(safe-area-inset-right))
+      max(8px, env(safe-area-inset-bottom))
+      max(8px, env(safe-area-inset-left));
+  }
+  .app-shell {
+    width: 100%;
+    min-height: calc(100vh - 16px);
+    min-height: calc(100svh - 16px);
+  }
   .hud-top, .bottom-bar { gap: 8px; }
+  .bottom-bar {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  }
   .hud-pill, .control-btn { padding: 9px 10px; border-radius: 15px; }
   .card { padding: 18px; }
+  .game-wrap {
+    border-radius: 22px;
+  }
+  canvas {
+    max-height: none;
+  }
   .game-banner {
     left: 12px;
     right: 12px;
@@ -249,5 +289,13 @@ h1, h2 { margin: 0 0 12px; }
   .hud-top {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
+  }
+  .control-btn {
+    min-height: 52px;
+    font-size: 0.95rem;
+  }
+  .game-banner {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

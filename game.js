@@ -9,6 +9,7 @@ const restartBtn = document.getElementById('restartBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const leftBtn = document.getElementById('leftBtn');
 const rightBtn = document.getElementById('rightBtn');
+const audioBtn = document.getElementById('audioBtn');
 const upgradeChoicesEl = document.getElementById('upgradeChoices');
 const scoreEl = document.getElementById('score');
 const coinsEl = document.getElementById('coins');
@@ -25,6 +26,24 @@ const ROAD_WIDTH = W - 52;
 const LANE_WIDTH = ROAD_WIDTH / 3;
 const laneXs = [ROAD_LEFT + LANE_WIDTH * 0.5, ROAD_LEFT + LANE_WIDTH * 1.5, ROAD_LEFT + LANE_WIDTH * 2.5];
 const BEST_SCORE_KEY = 'sky-raider-blitz-best';
+const AUDIO_ENABLED_KEY = 'sky-raider-blitz-audio';
+const MUSIC_TRACKS = [
+  'assets/music/digital-horizon.mp3',
+  'assets/music/digital-pulse-loop.mp3',
+  'assets/music/hype-drop.mp3',
+  'assets/music/midnight-drift.mp3',
+  'assets/music/midnight-drive.mp3',
+  'assets/music/pixel-overload.mp3',
+  'assets/music/viral-vibe.mp3',
+];
+const SFX_FILES = {
+  shoot: 'assets/sfx/player-shot.ogg',
+  enemyShot: 'assets/sfx/enemy-shot.ogg',
+  hit: 'assets/sfx/enemy-hit.ogg',
+  explode: 'assets/sfx/explosion.ogg',
+  coin: 'assets/sfx/coin.ogg',
+  uiClick: 'assets/sfx/button-click.ogg',
+};
 
 function safeLoadBestScore() {
   try {
@@ -42,6 +61,23 @@ function safeSaveBestScore(value) {
   }
 }
 
+function safeLoadAudioEnabled() {
+  try {
+    const value = localStorage.getItem(AUDIO_ENABLED_KEY);
+    return value === null ? true : value === 'true';
+  } catch {
+    return true;
+  }
+}
+
+function safeSaveAudioEnabled(value) {
+  try {
+    localStorage.setItem(AUDIO_ENABLED_KEY, String(value));
+  } catch {
+    // Ignore storage failures so the game keeps running in restricted contexts.
+  }
+}
+
 function buildStars() {
   return Array.from({ length: 42 }, () => ({
     x: Math.random() * W,
@@ -49,6 +85,13 @@ function buildStars() {
     size: Math.random() * 2.4 + 0.7,
     speed: Math.random() * 1.6 + 0.6,
   }));
+}
+
+function createMusicPlayer() {
+  const audio = new Audio();
+  audio.volume = 0.45;
+  audio.preload = 'auto';
+  return audio;
 }
 
 const state = {
@@ -73,6 +116,9 @@ const state = {
   best: safeLoadBestScore(),
   statusText: 'Stay in motion and clear the lane.',
   stars: buildStars(),
+  audioEnabled: safeLoadAudioEnabled(),
+  musicReady: MUSIC_TRACKS.length > 0,
+  currentTrackIndex: -1,
 };
 
 const player = {
@@ -99,6 +145,9 @@ let enemyBullets = [];
 let enemies = [];
 let coins = [];
 let particles = [];
+const backgroundMusic = createMusicPlayer();
+let audioContext = null;
+const soundPools = {};
 
 const upgrades = [
   {
@@ -173,6 +222,212 @@ function setStatus(message) {
   statusTextEl.textContent = message;
 }
 
+function updateAudioButton() {
+  audioBtn.textContent = state.audioEnabled ? 'Audio On' : 'Audio Off';
+}
+
+function buildSoundPool(src, volume, voices = 4) {
+  const pool = Array.from({ length: voices }, () => {
+    const audio = new Audio(src);
+    audio.preload = 'auto';
+    audio.volume = volume;
+    return audio;
+  });
+
+  soundPools[src] = {
+    pool,
+    index: 0,
+  };
+}
+
+function preloadSfx() {
+  buildSoundPool(SFX_FILES.shoot, 0.2, 8);
+  buildSoundPool(SFX_FILES.enemyShot, 0.16, 6);
+  buildSoundPool(SFX_FILES.hit, 0.24, 8);
+  buildSoundPool(SFX_FILES.explode, 0.28, 4);
+  buildSoundPool(SFX_FILES.coin, 0.18, 5);
+  buildSoundPool(SFX_FILES.uiClick, 0.16, 4);
+}
+
+function ensureAudioContext() {
+  if (!audioContext) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) {
+      audioContext = new AudioContextClass();
+    }
+  }
+
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext.resume().catch(() => {});
+  }
+}
+
+function onGameInteraction() {
+  ensureAudioContext();
+  ensureMusicStarted();
+}
+
+function shuffleTracks() {
+  const order = MUSIC_TRACKS.map((_, index) => index);
+  for (let i = order.length - 1; i > 0; i -= 1) {
+    const swapIndex = Math.floor(Math.random() * (i + 1));
+    [order[i], order[swapIndex]] = [order[swapIndex], order[i]];
+  }
+  return order;
+}
+
+let musicQueue = shuffleTracks();
+
+function queueNextTrack() {
+  if (!state.audioEnabled || !state.musicReady || MUSIC_TRACKS.length === 0) return;
+
+  if (musicQueue.length === 0) {
+    musicQueue = shuffleTracks().filter((index) => index !== state.currentTrackIndex);
+    if (musicQueue.length === 0) musicQueue = [0];
+  }
+
+  state.currentTrackIndex = musicQueue.shift();
+  backgroundMusic.src = MUSIC_TRACKS[state.currentTrackIndex];
+}
+
+function ensureMusicStarted() {
+  if (!state.audioEnabled || !state.musicReady) return;
+  if (!backgroundMusic.src) {
+    queueNextTrack();
+  }
+  backgroundMusic.play().catch(() => {
+    // Browsers can reject autoplay until the first interaction. We'll try again later.
+  });
+}
+
+function stopMusic() {
+  backgroundMusic.pause();
+}
+
+function toggleAudio() {
+  state.audioEnabled = !state.audioEnabled;
+  safeSaveAudioEnabled(state.audioEnabled);
+  updateAudioButton();
+
+  if (state.audioEnabled) {
+    ensureAudioContext();
+    ensureMusicStarted();
+  } else {
+    stopMusic();
+  }
+}
+
+function playSfxFallback(type) {
+  if (!state.audioEnabled) return;
+  ensureAudioContext();
+  if (!audioContext) return;
+
+  const now = audioContext.currentTime;
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  const filter = audioContext.createBiquadFilter();
+
+  oscillator.connect(filter);
+  filter.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+
+  if (type === 'shoot') {
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(720, now);
+    oscillator.frequency.exponentialRampToValueAtTime(420, now + 0.08);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1800, now);
+    gainNode.gain.setValueAtTime(0.025, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    oscillator.start(now);
+    oscillator.stop(now + 0.1);
+    return;
+  }
+
+  if (type === 'enemyShot') {
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(300, now);
+    oscillator.frequency.exponentialRampToValueAtTime(220, now + 0.12);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1200, now);
+    gainNode.gain.setValueAtTime(0.02, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    oscillator.start(now);
+    oscillator.stop(now + 0.13);
+    return;
+  }
+
+  if (type === 'hit') {
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(260, now);
+    oscillator.frequency.exponentialRampToValueAtTime(120, now + 0.12);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(900, now);
+    gainNode.gain.setValueAtTime(0.03, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+    oscillator.start(now);
+    oscillator.stop(now + 0.14);
+    return;
+  }
+
+  if (type === 'coin') {
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(860, now);
+    oscillator.frequency.exponentialRampToValueAtTime(1280, now + 0.08);
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(700, now);
+    gainNode.gain.setValueAtTime(0.03, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+    oscillator.start(now);
+    oscillator.stop(now + 0.11);
+    return;
+  }
+
+  if (type === 'explode') {
+    oscillator.type = 'sawtooth';
+    oscillator.frequency.setValueAtTime(180, now);
+    oscillator.frequency.exponentialRampToValueAtTime(45, now + 0.22);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(700, now);
+    gainNode.gain.setValueAtTime(0.045, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.start(now);
+    oscillator.stop(now + 0.23);
+    return;
+  }
+
+  oscillator.type = 'sine';
+  oscillator.frequency.setValueAtTime(240, now);
+  gainNode.gain.setValueAtTime(0.03, now);
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+  oscillator.start(now);
+  oscillator.stop(now + 0.15);
+}
+
+function playSfx(type) {
+  if (!state.audioEnabled) return;
+
+  const src = SFX_FILES[type];
+  if (src && soundPools[src]) {
+    const entry = soundPools[src];
+    const audio = entry.pool[entry.index];
+    entry.index = (entry.index + 1) % entry.pool.length;
+
+    try {
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        playSfxFallback(type);
+      });
+      return;
+    } catch {
+      playSfxFallback(type);
+      return;
+    }
+  }
+
+  playSfxFallback(type);
+}
+
 function configureWave() {
   state.waveFrame = 0;
   state.waveKills = 0;
@@ -227,6 +482,7 @@ function resetGame() {
 
   configureWave();
   updateHud();
+  updateAudioButton();
   pauseBtn.textContent = 'Pause';
 }
 
@@ -240,6 +496,7 @@ function updateHud() {
 
 function startGame() {
   resetGame();
+  onGameInteraction();
   startOverlay.classList.remove('visible');
   startOverlay.classList.add('hidden');
   gameOverOverlay.classList.add('hidden');
@@ -273,6 +530,7 @@ function spawnEnemy() {
     width: 40,
     height: 54,
     hp: 1 + Math.floor(state.wave / 3),
+    maxHp: 1 + Math.floor(state.wave / 3),
     speed: speedBase,
     color: '#ff7a7a',
     coinValue: 1,
@@ -304,6 +562,8 @@ function spawnEnemy() {
     enemy.fireCooldown = 55;
   }
 
+  enemy.maxHp = enemy.hp;
+
   enemies.push(enemy);
 }
 
@@ -331,7 +591,7 @@ function spawnEnemyBullet(enemy, pattern = 'single') {
   const shots = pattern === 'spread' ? [-2.3, 0, 2.3] : [0];
 
   shots.forEach((vx) => {
-    enemyBullets.push({
+      enemyBullets.push({
       x: enemy.x,
       y: enemy.y + enemy.height / 2 - 6,
       width: pattern === 'spread' ? 10 : 8,
@@ -340,6 +600,7 @@ function spawnEnemyBullet(enemy, pattern = 'single') {
       vy: pattern === 'spread' ? 5.4 : 6.2,
     });
   });
+  playSfx('enemyShot');
 }
 
 function fireBullets() {
@@ -359,6 +620,7 @@ function fireBullets() {
       damage: player.bulletDamage,
     });
   });
+  playSfx('shoot');
 }
 
 function addParticles(x, y, color, count = 10) {
@@ -396,6 +658,7 @@ function damagePlayer(amount = 1) {
   player.hp -= amount;
   state.flashTimer = 12;
   setStatus(player.hp > 0 ? 'Hull breach. Keep moving.' : 'Ship lost.');
+  playSfx('hit');
   updateHud();
 
   if (player.hp <= 0) {
@@ -440,6 +703,7 @@ function pickUpCoin(coin) {
   state.coins += coin.value;
   state.score += coin.value * 12;
   addParticles(coin.x, coin.y, '#ffd86b', 5);
+  playSfx('coin');
   updateHud();
 }
 
@@ -452,6 +716,7 @@ function buildUpgradeChoices() {
     btn.className = 'upgrade-btn';
     btn.innerHTML = `<strong>${upgrade.title}</strong><span>${upgrade.desc}</span>`;
     btn.addEventListener('click', () => {
+      playSfx('uiClick');
       upgrade.apply();
       updateHud();
       resumeAfterUpgrade();
@@ -463,6 +728,7 @@ function buildUpgradeChoices() {
 function registerKill(enemy) {
   state.score += enemy.kind === 'boss' ? 500 : enemy.kind === 'tank' ? 80 : 40;
   state.waveKills += 1;
+  playSfx(enemy.kind === 'boss' ? 'explode' : 'hit');
   coins.push({
     x: enemy.x,
     y: enemy.y,
@@ -732,21 +998,38 @@ function drawPlayer() {
   ctx.save();
   ctx.translate(player.x, player.y);
 
-  ctx.fillStyle = '#80f5be';
+  ctx.fillStyle = '#4fd9a7';
   ctx.beginPath();
-  ctx.moveTo(0, -34);
-  ctx.lineTo(24, 18);
-  ctx.lineTo(12, 28);
-  ctx.lineTo(0, 12);
-  ctx.lineTo(-12, 28);
-  ctx.lineTo(-24, 18);
+  ctx.moveTo(0, -38);
+  ctx.lineTo(22, -8);
+  ctx.lineTo(28, 18);
+  ctx.lineTo(12, 30);
+  ctx.lineTo(4, 8);
+  ctx.lineTo(-4, 8);
+  ctx.lineTo(-12, 30);
+  ctx.lineTo(-28, 18);
+  ctx.lineTo(-22, -8);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = '#d8fff0';
-  ctx.fillRect(-7, -10, 14, 18);
-  ctx.fillStyle = '#7bb6ff';
-  ctx.fillRect(-3, -24, 6, 10);
+  ctx.fillStyle = '#dffff4';
+  ctx.beginPath();
+  ctx.moveTo(0, -26);
+  ctx.lineTo(10, -2);
+  ctx.lineTo(0, 10);
+  ctx.lineTo(-10, -2);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#86c2ff';
+  ctx.fillRect(-18, 6, 8, 20);
+  ctx.fillRect(10, 6, 8, 20);
+  ctx.fillStyle = '#163149';
+  ctx.fillRect(-3, -8, 6, 18);
+
+  ctx.fillStyle = 'rgba(123, 182, 255, 0.8)';
+  ctx.fillRect(-9, 26, 6, 12);
+  ctx.fillRect(3, 26, 6, 12);
 
   if (player.shield > 0) {
     ctx.strokeStyle = 'rgba(123,182,255,0.92)';
@@ -777,13 +1060,25 @@ function drawEnemies() {
     ctx.translate(enemy.x, enemy.y);
 
     if (enemy.kind === 'boss') {
-      ctx.fillStyle = enemy.color;
-      ctx.fillRect(-enemy.width / 2, -enemy.height / 2, enemy.width, enemy.height);
-      ctx.fillStyle = '#2d1204';
-      ctx.fillRect(-24, -18, 48, 22);
+      ctx.fillStyle = '#ff9c5e';
+      ctx.beginPath();
+      ctx.moveTo(0, -enemy.height / 2);
+      ctx.lineTo(enemy.width / 2 - 8, -18);
+      ctx.lineTo(enemy.width / 2, 18);
+      ctx.lineTo(54, enemy.height / 2);
+      ctx.lineTo(-54, enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2, 18);
+      ctx.lineTo(-enemy.width / 2 + 8, -18);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#4e2106';
+      ctx.fillRect(-28, -18, 56, 22);
       ctx.fillStyle = '#ffe6b4';
-      ctx.fillRect(-42, 8, 16, 20);
-      ctx.fillRect(26, 8, 16, 20);
+      ctx.fillRect(-48, 8, 18, 22);
+      ctx.fillRect(30, 8, 18, 22);
+      ctx.fillStyle = '#ffcf86';
+      ctx.fillRect(-18, -42, 36, 12);
 
       const healthRatio = enemy.hp / enemy.maxHp;
       ctx.fillStyle = 'rgba(0,0,0,0.45)';
@@ -797,17 +1092,77 @@ function drawEnemies() {
       return;
     }
 
-    ctx.fillStyle = enemy.color;
-    ctx.beginPath();
-    ctx.moveTo(0, enemy.height / 2);
-    ctx.lineTo(enemy.width / 2, -enemy.height / 2 + 12);
-    ctx.lineTo(0, -enemy.height / 2);
-    ctx.lineTo(-enemy.width / 2, -enemy.height / 2 + 12);
-    ctx.closePath();
-    ctx.fill();
+    if (enemy.kind === 'tank') {
+      ctx.fillStyle = '#ffc06d';
+      ctx.beginPath();
+      ctx.moveTo(0, enemy.height / 2);
+      ctx.lineTo(enemy.width / 2, 8);
+      ctx.lineTo(enemy.width / 2 - 10, -enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2 + 10, -enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#653e0c';
+      ctx.fillRect(-10, -10, 20, 18);
+    } else if (enemy.kind === 'scout') {
+      ctx.fillStyle = '#87d7ff';
+      ctx.beginPath();
+      ctx.moveTo(0, enemy.height / 2);
+      ctx.lineTo(enemy.width / 2, -6);
+      ctx.lineTo(8, -enemy.height / 2);
+      ctx.lineTo(-8, -enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2, -6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#17364d';
+      ctx.fillRect(-6, -8, 12, 14);
+    } else if (enemy.kind === 'shooter') {
+      ctx.fillStyle = '#bf98ff';
+      ctx.beginPath();
+      ctx.moveTo(0, enemy.height / 2);
+      ctx.lineTo(enemy.width / 2, 4);
+      ctx.lineTo(12, -enemy.height / 2);
+      ctx.lineTo(-12, -enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#2a1847';
+      ctx.fillRect(-12, -4, 24, 12);
+    } else {
+      ctx.fillStyle = enemy.color;
+      ctx.beginPath();
+      ctx.moveTo(0, enemy.height / 2);
+      ctx.lineTo(enemy.width / 2, -enemy.height / 2 + 12);
+      ctx.lineTo(0, -enemy.height / 2);
+      ctx.lineTo(-enemy.width / 2, -enemy.height / 2 + 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(-9, -6, 18, 12);
+    }
 
-    ctx.fillStyle = 'rgba(0,0,0,0.22)';
-    ctx.fillRect(-9, -6, 18, 12);
+    const healthRatio = enemy.hp / enemy.maxHp;
+    const killableNow = enemy.hp <= player.bulletDamage;
+    const softTarget = !killableNow && enemy.hp <= Math.max(player.bulletDamage + 1, Math.ceil(enemy.maxHp * 0.4));
+
+    ctx.fillStyle = 'rgba(3, 10, 20, 0.7)';
+    ctx.fillRect(-enemy.width / 2, -enemy.height / 2 - 14, enemy.width, 6);
+    ctx.fillStyle = killableNow ? '#80f5be' : softTarget ? '#ffd86b' : '#ff7a7a';
+    ctx.fillRect(-enemy.width / 2, -enemy.height / 2 - 14, enemy.width * healthRatio, 6);
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.strokeRect(-enemy.width / 2, -enemy.height / 2 - 14, enemy.width, 6);
+
+    if (killableNow || softTarget) {
+      ctx.strokeStyle = killableNow ? 'rgba(128,245,190,0.95)' : 'rgba(255,216,107,0.95)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-enemy.width / 2 - 4, -enemy.height / 2 - 4, enemy.width + 8, enemy.height + 8);
+      ctx.fillStyle = killableNow ? '#d8fff0' : '#fff1bd';
+      ctx.font = 'bold 10px Trebuchet MS, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(killableNow ? 'FINISH' : 'WEAK', 0, -enemy.height / 2 - 20);
+      ctx.textAlign = 'start';
+    }
+
     ctx.restore();
   });
 }
@@ -895,12 +1250,15 @@ function loop() {
 let touchStartX = null;
 
 canvas.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  onGameInteraction();
   if (!state.running || state.paused) return;
   const rect = canvas.getBoundingClientRect();
   touchStartX = event.clientX - rect.left;
 });
 
 canvas.addEventListener('pointerup', (event) => {
+  event.preventDefault();
   if (!state.running || state.paused || touchStartX === null) return;
   const rect = canvas.getBoundingClientRect();
   const endX = event.clientX - rect.left;
@@ -921,17 +1279,63 @@ canvas.addEventListener('pointercancel', () => {
 
 window.addEventListener('keydown', (event) => {
   const key = event.key.toLowerCase();
-  if (key === 'arrowleft' || key === 'a') moveLane(-1);
-  if (key === 'arrowright' || key === 'd') moveLane(1);
-  if ((key === ' ' || key === 'enter') && !state.running && !state.inUpgrade && !state.gameOver) startGame();
-  if (key === 'p') togglePause();
+  if (key === 'arrowleft' || key === 'a') {
+    event.preventDefault();
+    moveLane(-1);
+  }
+  if (key === 'arrowright' || key === 'd') {
+    event.preventDefault();
+    moveLane(1);
+  }
+  if ((key === ' ' || key === 'enter') && !state.running && !state.inUpgrade && !state.gameOver) {
+    event.preventDefault();
+    startGame();
+  }
+  if (key === 'p') {
+    event.preventDefault();
+    togglePause();
+  }
+  if (key === 'm') {
+    event.preventDefault();
+    toggleAudio();
+  }
 });
 
-startBtn.addEventListener('click', startGame);
-restartBtn.addEventListener('click', startGame);
-pauseBtn.addEventListener('click', togglePause);
-leftBtn.addEventListener('pointerdown', () => moveLane(-1));
-rightBtn.addEventListener('pointerdown', () => moveLane(1));
+startBtn.addEventListener('click', () => {
+  onGameInteraction();
+  startGame();
+});
+restartBtn.addEventListener('click', () => {
+  onGameInteraction();
+  startGame();
+});
+startBtn.addEventListener('click', () => playSfx('uiClick'));
+restartBtn.addEventListener('click', () => playSfx('uiClick'));
+pauseBtn.addEventListener('click', () => {
+  onGameInteraction();
+  playSfx('uiClick');
+  togglePause();
+});
+leftBtn.addEventListener('pointerdown', () => {
+  onGameInteraction();
+  playSfx('uiClick');
+  moveLane(-1);
+});
+rightBtn.addEventListener('pointerdown', () => {
+  onGameInteraction();
+  playSfx('uiClick');
+  moveLane(1);
+});
+audioBtn.addEventListener('click', () => {
+  onGameInteraction();
+  playSfx('uiClick');
+  toggleAudio();
+});
+backgroundMusic.addEventListener('ended', () => {
+  queueNextTrack();
+  ensureMusicStarted();
+});
 
 resetGame();
+preloadSfx();
 requestAnimationFrame(loop);
