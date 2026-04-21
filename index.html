@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Sky Raider Blitz</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hud-top">
+      <div class="hud-pill">
+        <span class="label">Score</span>
+        <span id="score">0</span>
+      </div>
+      <div class="hud-pill center-pill">
+        <span class="label">Wave</span>
+        <span id="wave">1</span>
+      </div>
+      <div class="hud-pill">
+        <span class="label">HP</span>
+        <span id="hp">5</span>
+      </div>
+      <div class="hud-pill">
+        <span class="label">Best</span>
+        <span id="best">0</span>
+      </div>
+    </header>
+
+    <main class="game-wrap">
+      <canvas id="gameCanvas" width="420" height="760" aria-label="Three lane shooter game"></canvas>
+      <div class="game-banner">
+        <span id="statusText">Stay in motion and clear the lane.</span>
+        <span id="coins" class="coin-readout">0 coins</span>
+      </div>
+
+      <div id="startOverlay" class="overlay visible">
+        <div class="card hero-card">
+          <p class="eyebrow">Web-based arcade shooter</p>
+          <h1>Sky Raider Blitz</h1>
+          <p class="subcopy">Slide between lanes, melt incoming squadrons, survive boss rushes, and stack wave upgrades in a browser-only shooter built for phone or desktop.</p>
+          <div class="instructions">
+            <div>Tap the left and right controls or swipe to change lanes</div>
+            <div>Auto-fire is always on, so focus on dodging and positioning</div>
+            <div>Every cleared wave offers upgrades and every fourth wave drops a boss</div>
+          </div>
+          <button id="startBtn" class="primary-btn">Start Run</button>
+        </div>
+      </div>
+
+      <div id="upgradeOverlay" class="overlay hidden">
+        <div class="card upgrade-card">
+          <p class="eyebrow">Choose an upgrade</p>
+          <h2>Wave Clear Bonus</h2>
+          <div id="upgradeChoices" class="upgrade-choices"></div>
+        </div>
+      </div>
+
+      <div id="gameOverOverlay" class="overlay hidden">
+        <div class="card over-card">
+          <p class="eyebrow">Run complete</p>
+          <h2>Game Over</h2>
+          <p id="finalStats" class="subcopy"></p>
+          <button id="restartBtn" class="primary-btn">Run It Back</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="bottom-bar">
+      <button id="leftBtn" class="control-btn" aria-label="Move left">Left</button>
+      <button id="pauseBtn" class="control-btn secondary-btn" aria-label="Pause game">Pause</button>
+      <button id="rightBtn" class="control-btn" aria-label="Move right">Right</button>
+    </footer>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
