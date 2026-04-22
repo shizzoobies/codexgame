@@ -184,6 +184,11 @@ h1, h2 { margin: 0 0 12px; }
   color: #d5e2f4;
 }
 
+.hero-actions {
+  display: grid;
+  gap: 10px;
+}
+
 .primary-btn,
 .upgrade-btn,
 .control-btn {
@@ -196,6 +201,20 @@ h1, h2 { margin: 0 0 12px; }
   color: #04111e;
   background: linear-gradient(180deg, var(--accent), #47d7a3);
   box-shadow: 0 12px 25px rgba(71, 215, 163, 0.35);
+}
+
+.secondary-link {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 18px;
+  padding: 13px 18px;
+  font-size: 0.96rem;
+  font-weight: 800;
+  color: #edf5ff;
+  text-decoration: none;
+  background: linear-gradient(180deg, #213549, var(--button-dark));
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .control-btn {
